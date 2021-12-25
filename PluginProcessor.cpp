@@ -145,12 +145,7 @@ void NewProjectAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     lastNoteValue = -1;
     tempo = 112;
     currentStep.assign(5, 0);
-    /*orbits = { {false}
-               ,{false}
-               ,{false}
-               ,{false}
-               ,{false}
-              };*/
+    cycleChanged = true;
     rate = static_cast<float> (sampleRate); // [5]
 }
 
@@ -221,68 +216,78 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         noteDuration = (noteDuration * 2.0f) / 3.0f;
 
     //I only want to do this loop if a value has changed....
-    for (int i = 0; i < 5; i++)
+    if (cycleChanged)
     {
-      
-       steps = (int)(*treeState.getRawParameterValue("StepCount" + std::to_string(i+1)) );
-       pulses = (int)(*treeState.getRawParameterValue("PulseCount" + std::to_string(i+1)) );
+        orbits.clear();
+        orbits.assign(5, { false });
+        cycleChanged = false;
+        for (int i = 0; i < 5; i++)
+        {
 
-   
-      
-       orbits.assign( 5, {false} );
-       orbits[i].assign(steps, false);
-
-
-       if (pulses >= steps)                         
-       {
-           orbits[i].assign(steps, true);
-       }
-
-       if (pulses > 0 && pulses < steps)
-       {
-           //evenly distributes steps of the orbit
-           for (int x = 0; x < pulses; x++)
-           {
-               cycleSteps.push_back((int)(steps / pulses));
-           }
+            steps = (int)(*treeState.getRawParameterValue("StepCount" + std::to_string(i + 1)));
+            pulses = (int)(*treeState.getRawParameterValue("PulseCount" + std::to_string(i + 1)));
+         
+            orbits[i].assign(steps, false);
+            auto check = std::string(orbits[i].begin(), orbits[i].end());
 
 
-           //evenly spaces the remainder across the orbit 
-           auto m = steps % pulses;
-           auto skip = (int)(juce::roundToIntAccurate(pulses / m) );
+            if (pulses >= steps)
+            {
+                orbits[i].assign(steps, true);
+            }
 
-           for (int x = 0; x < pulses; x += (int)(juce::roundToIntAccurate(pulses / m)))
-           {
-               cycleSteps[x] = cycleSteps[x] + 1;
-
-               if (m - (x + 1) == 0) // break loop when we've added 'remainder' number of steps between pulses
-               {
-                   x = pulses;
-               }
-           }
-
-
-           auto checkCycleSteps = std::string(cycleSteps.begin(), cycleSteps.end());
+            if (pulses > 0 && pulses < steps)
+            {
+                //evenly distributes steps of the orbit
+                for (int x = 0; x < pulses; x++)
+                {
+                    cycleSteps.push_back((int)(steps / pulses));
+                }
 
 
-           // adds pulse pattern to the vector of orbits
-           auto pulseLocation = (uint8)0;
-           orbits[i][0] = true;
+                //evenly spaces the remainder across the orbit 
+                auto m = steps % pulses;
+                auto skip = (int)(juce::roundToIntAccurate(pulses / m));
 
-           for (auto x : cycleSteps)
-           {
-               pulseLocation += x;
-               orbits[i][pulseLocation - 1] = true;
-           }
-            
-       }
-       
+                for (int x = 0; x < pulses; x += (int)(juce::roundToIntAccurate(pulses / m)))
+                {
+                    cycleSteps[x] = cycleSteps[x] + 1;
 
-       cycleSteps.clear();
+                    if (m - (x + 1) == 0) // break loop when we've added 'remainder' number of steps between pulses
+                    {
+                        x = pulses;
+                    }
+                }
+
+
+                auto checkCycleSteps = std::string(cycleSteps.begin(), cycleSteps.end());
+
+
+                // adds pulse pattern to the vector of orbits
+                auto pulseLocation = (uint8)0;
+                orbits[i][0] = true;
+
+                for (auto x : cycleSteps)
+                {
+                    pulseLocation += x;
+                    orbits[i][pulseLocation - 1] = true;
+                }
+
+                for (auto o : orbits)
+                {
+                    auto checkOrbits = std::string(o.begin(), o.end());
+                }
+            }
+
+
+            cycleSteps.clear();
+        }
     }
+    
 
 
     // .........................................................................................................................
+
 
     if ((time + numSamples) >= noteDuration)                                                      
     {  
@@ -300,12 +305,19 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             currentStep[i] = ((int)(*treeState.getRawParameterValue("Reversed" + std::to_string(i + 1))) == false) ?
                 (currentStep[i]+1) % steps 
                 : steps - ( (steps-currentStep[i]) % steps ) - 1;
-            //orbits might be emptied when we 'jump' to this block... ? 
 
             //add note for each orbit with currentStep that returns 'true'
+            
+            for (auto o : orbits)
+            {
+                auto checkOrbits = std::string(o.begin(), o.end());
+            }
+
+
             if ( orbits[i][currentStep[i]] )
             {
-                auto note = noteToInt((juce::String)(*treeState.getRawParameterValue("Note" + std::to_string(i + 1))));
+                //auto dummy = *treeState.getRawParameterValue("OutputNote" + std::to_string(i + 1));
+                auto note = noteToInt((juce::String)(*treeState.getRawParameterValue("OutputNote" + std::to_string(i + 1))));
                 note = note + ( 12 * (int)(*treeState.getRawParameterValue("Octave" + std::to_string(i + 1))) );
                 processedMidi.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)84), offset);
                 notes.add(note);
@@ -319,7 +331,7 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     time = (time + numSamples) % noteDuration;                                                      
 
     //always use swapWith(), avoids unpredictable behavior from directly editing midi buffer
-    orbits.clear();
+   
     midi.swapWith(processedMidi);
 }
 
