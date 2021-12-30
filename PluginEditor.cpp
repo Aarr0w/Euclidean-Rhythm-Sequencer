@@ -805,6 +805,8 @@ public:
         if (just == juce::Justification::centredLeft || just == juce::Justification::left)
             justLabel = 'L';
 
+        //Font myFont("Cooper Std", "Black Italic", 10.0f);
+        //parameterLabel.setFont(myFont);
         parameterLabel.setText(parameter.getLabel(), juce::dontSendNotification);
         parameterLabel.setJustificationType(just);
         addAndMakeVisible(parameterLabel);
@@ -1011,19 +1013,36 @@ private:
     bool horizontal, outline;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ParametersPanel)
 };
-
-//==============================================================================>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-class VisualOrbit : public juce::Component
-{
+//===============================================================================================================
+class VisualOrbit : public juce::Component,
+    private juce::AudioProcessorParameter::Listener
+{ //does this need to inheret from timer to stay accurate... ?
 public:
-    VisualOrbit( juce::Colour c)
-        : color(c)    
+    VisualOrbit(juce::AudioProcessorValueTreeState& t, juce::AudioProcessorParameter* stepParam, juce::AudioProcessorParameter* pulseParam, juce::Colour c)
+        : tree(t), stepParameter(*stepParam), pulseParameter(*pulseParam), color(c)
     {      
         setSize(100,100);
+        stepParameter.addListener(this);
+        pulseParameter.addListener(this);
+        
+        numSteps = stepParameter.getValue();
+
+        auto myVariable = tree.getRawParameterValue("StepCount1");
+        numSteps = *myVariable;
+      
+        pulseActive = pulseParameter.getDefaultValue();
+
+        pulseIndex = pulseParameter.getParameterIndex();
+        stepIndex = stepParameter.getParameterIndex();
+
+
+
     }
 
     ~VisualOrbit() override
     {
+        stepParameter.removeListener(this);
+        pulseParameter.removeListener(this);
     }
 
     void paint(juce::Graphics& g) override
@@ -1035,10 +1054,9 @@ public:
         auto fill = findColour(juce::Slider::rotarySliderFillColourId);
 
         auto bounds = getLocalBounds();
-        float pi = 3.1415926535897932864;
         auto radius = jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
         //auto toAngle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-        auto toAngle = 0.0f + dotPos * (2*pi - 0.0f);
+        auto toAngle = 0.0f + dotPos * (2*MathConstants<float>::pi - 0.0f);
         auto lineW = jmin(8.0f, radius * 0.5f);
         auto arcRadius = radius - lineW * 0.5f;
 
@@ -1049,18 +1067,29 @@ public:
             arcRadius,
             0.0f,
             0.0f,
-            2*pi,
+            2*MathConstants<float>::pi,
             true);
 
         g.setColour(outline);
         g.strokePath(backgroundArc, PathStrokeType(lineW, PathStrokeType::curved, PathStrokeType::rounded));
 
+        g.setColour(color.withAlpha(0.5f));
+        for (int i = 0; i < numSteps; i++)
+        {
+            auto lnAngle = (2 * MathConstants<float>::pi / numSteps) * i;
+            Point<float> thumbPoint(bounds.getCentreX() + arcRadius * std::cos(lnAngle - MathConstants<float>::halfPi),
+                bounds.getCentreY() + arcRadius * std::sin(lnAngle - MathConstants<float>::halfPi));
+            auto dotW = lineW * 0.8f;
+            g.fillEllipse(Rectangle<float>(dotW, dotW).withCentre(thumbPoint));
+        }
 
         auto thumbWidth = lineW * 2.0f;
         Point<float> thumbPoint(bounds.getCentreX() + arcRadius * std::cos(toAngle - MathConstants<float>::halfPi),
             bounds.getCentreY() + arcRadius * std::sin(toAngle - MathConstants<float>::halfPi));
 
-        g.setColour(findColour(Slider::thumbColourId));
+        
+        g.setColour( (pulseParameter.getValue())? 
+            findColour(Slider::thumbColourId) : juce::Colours::grey);
         g.fillEllipse(Rectangle<float>(thumbWidth, thumbWidth).withCentre(thumbPoint));
 
     }
@@ -1079,15 +1108,53 @@ public:
         auto area = getLocalBounds();
         p->setBounds(area.removeFromBottom(p->getHeight()));
     }
+    void parameterValueChanged(int i, float f ) override 
+    {
+        MessageManagerLock mml(Thread::getCurrentThread());
+        if (i == stepIndex)
+        {
+            stepParameter.setValue(f);
+            numSteps = stepParameter.getValue();
+        } 
+    }
+
+    void setValue() 
+    {
+        repaint();
+    }
+
+    void parameterGestureChanged(int i, bool b) override 
+    {
+        numSteps = stepParameter.getValue();
+    }
 
 public:
     int height;
     int width;
     juce::Colour color;
     bool pulseActive;
+    int numSteps;
 
 private:
+    int stepIndex, pulseIndex;
+    //juce::AudioProcessor& processor;
+    juce::AudioProcessorValueTreeState& tree;
+    juce::AudioProcessorParameter& stepParameter;
+    juce::AudioProcessorParameter& pulseParameter;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VisualOrbit)
+};
+//==============================================================================>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+class OrbitPanel :public juce::Component,
+    private juce::AudioProcessorListener
+{
+    OrbitPanel()
+    {}
+    ~OrbitPanel()
+    {}
+public:
+    std::vector<VisualOrbit> orbits;
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OrbitPanel)
+
 };
 //==================================================================================================================
 struct AarrowAudioProcessorEditor::Pimpl
@@ -1109,7 +1176,7 @@ struct AarrowAudioProcessorEditor::Pimpl
 
 
         //ParametersPanel* myPanel = new ParametersPanel(owner.audioProcessor, params, false);
-        orbit1 = new VisualOrbit(juce::Colours::slategrey);
+        orbit1 = new VisualOrbit(owner.audioProcessor.treeState,owner.audioProcessor.treeState.getParameter("StepCount1"), owner.audioProcessor.treeState.getParameter("PulseActive1"), juce::Colours::slategrey);
 
         ////myPanel->setSize(400, 100);
         //dynamic_cast<ParameterDisplayComponent*> (myPanel->findChildWithID("-RANGEComp"))->displayParameterName(juce::Justification::centredRight);
@@ -1130,7 +1197,7 @@ struct AarrowAudioProcessorEditor::Pimpl
 
 
 
-
+     
 
         /*for (auto* comp : myPanel->getChildren())
             auto pie = comp->getComponentID();*/

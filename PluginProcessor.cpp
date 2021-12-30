@@ -53,18 +53,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout NewProjectAudioProcessor::cr
     params.add(std::make_unique<juce::AudioParameterBool>("Sync", "SYNC", false));
     params.add(std::make_unique<juce::AudioParameterBool>("Dot", "DOT", false));
     params.add(std::make_unique<juce::AudioParameterBool>("Trip", "TRIP", false));
+    params.add(std::make_unique<juce::AudioParameterBool>("ForceStep", "STEP", false));
 
     for (int i = 1; i < 6; i++)
     {
         auto a = juce::String("OnButton"+ std::to_string(i));
      
-        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("OnButton" + std::to_string(i)), juce::String( "ON" + std::to_string(i)) ,false));
+        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("OnButton" + std::to_string(i)), juce::String("ON" + std::to_string(i)) ,false));
         params.add(std::make_unique<juce::AudioParameterBool>(juce::String("Reversed" + std::to_string(i)), juce::String("REVERSED" + std::to_string(i)), false));
+
+        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("PulseActive" + std::to_string(i)), juce::String("PULSEON" + std::to_string(i)), true));
+        
 
         params.add(std::make_unique<juce::AudioParameterInt>(juce::String("StepCount" + std::to_string(i)), juce::String("STEPS" + std::to_string(i)), 1, 32, 8));
         params.add(std::make_unique<juce::AudioParameterInt>(juce::String("PulseCount" + std::to_string(i)),juce::String( "PULSES" + std::to_string(i)), 0, 32, 3));
 
-        //juce::Array<juce::String> chromatic = { "C4","C#4","D4","D#4","E4","F4","F#4","G4","G#4","A4","A#4","B4" };
         params.add(std::make_unique<juce::AudioParameterChoice>(juce::String("OutputNote" + std::to_string(i)), juce::String("NOTE" + std::to_string(i)), juce::Array<juce::String>{ "C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4" },0));
         
         params.add(std::make_unique<juce::AudioParameterInt>(juce::String("Octave" + std::to_string(i)), juce::String("OCTAVE" + std::to_string(i)), -3, 3, 0));
@@ -142,7 +145,6 @@ void NewProjectAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBl
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
     time = 0;                               // [4]
-    lastNoteValue = -1;
     tempo = 112;
     currentStep.assign(5, 0);
     cycleChanged = true;
@@ -181,6 +183,16 @@ bool NewProjectAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts
 }
 #endif
 
+juce::String vecToString(std::vector<bool> vec)
+{
+    juce::String s = "";
+    for (auto v : vec)
+    {
+        s += (juce::String)((v)? "|true" : "|false");
+    }
+    return s;
+}
+
 void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
 
@@ -210,10 +222,14 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     auto noteDuration = (!*sync) ?
         static_cast<int> (std::ceil(rate * 0.25f * (0.1f + (1.0f - (*speed)))))
         : static_cast<int> (std::ceil(rate * 0.25f * (tempo / 60) * numerator * syncSpeed)); // should correspond to one quarter note w/o syncSpeed
+   
     if (*dot)
         noteDuration = noteDuration * 1.5f;
     if (*trip)
         noteDuration = (noteDuration * 2.0f) / 3.0f;
+
+    if (ntDrtn != noteDuration)
+        ntDrtn = noteDuration;
 
     //I only want to do this loop if a value has changed....
     if (cycleChanged)
@@ -265,17 +281,15 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
                 // adds pulse pattern to the vector of orbits
                 auto pulseLocation = (uint8)0;
-                orbits[i][0] = true;
-
                 for (auto x : cycleSteps)
                 {
                     pulseLocation += x;
-                    orbits[i][pulseLocation - 1] = true;
+                    orbits[i][pulseLocation % steps] = true;
                 }
 
                 for (auto o : orbits)
                 {
-                    auto checkOrbits = std::string(o.begin(), o.end());
+                    auto checkOrbits = vecToString(o);
                 }
             }
 
@@ -316,13 +330,17 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
             if ( orbits[i][currentStep[i]] )
             {
-                //auto dummy = *treeState.getRawParameterValue("OutputNote" + std::to_string(i + 1));
+                treeState.getParameter("PulseActive" + std::to_string(i + 1))->setValueNotifyingHost(1.0f);
+
                 auto note = noteToInt((juce::String)(*treeState.getRawParameterValue("OutputNote" + std::to_string(i + 1))));
                 note = note + ( 12 * (int)(*treeState.getRawParameterValue("Octave" + std::to_string(i + 1))) );
                 processedMidi.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)84), offset);
                 notes.add(note);
             }
-            
+            else
+            {
+                treeState.getParameter("PulseActive" + std::to_string(i + 1))->setValueNotifyingHost(0.0f);
+            }
 
         }
 

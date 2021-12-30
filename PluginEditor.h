@@ -32,7 +32,7 @@ public:
 
         setColour(juce::ToggleButton::tickColourId, juce::Colours::orange);
 
-        //setDefaultSansSerifTypefaceName("Avenir Next");
+       
 
 
     }

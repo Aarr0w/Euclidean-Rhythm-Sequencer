@@ -20,9 +20,8 @@ public:
     NewProjectAudioProcessor();
     ~NewProjectAudioProcessor() override;
 
-    std::vector<int> currentStep;
-
-
+    juce::AudioProcessorValueTreeState treeState;
+    
     //==============================================================================
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -83,17 +82,19 @@ public:
 private:
     //==============================================================================
 
-    juce::AudioProcessorValueTreeState treeState;
+    //juce::AudioProcessorValueTreeState treeState;
 
     juce::AudioPlayHead::CurrentPositionInfo playHeadInfo;
+
     int tempo, time, numerator;
-    int lastNoteValue;
+    int ntDrtn;
     float rate;
     float syncSpeed;
     int steps;
     int pulses;
     bool cycleChanged;
     std::vector <std::vector<bool>> orbits;
+    std::vector<int> currentStep;
     std::vector<int> cycleSteps;
     juce::SortedSet<int> notes; //might need to be vector if noteOffs aren't catching multiples
 
