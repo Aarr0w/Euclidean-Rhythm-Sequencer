@@ -910,6 +910,7 @@ public:
         if (horizontal)
             paramWidth = 400 / parameters.size();
 
+  
         paramHeight = 40;
         outline = false;
 
@@ -917,8 +918,7 @@ public:
             if (param->isAutomatable())
                 addChildAndSetID(paramComponents.add(new ParameterDisplayComponent(processor, *param, paramWidth)), param->getName(128) + "Comp");
 
-        //allComponents.addArray(paramComponents);   this line causes exception error... idk why but it's not being deleted properly
-        for (auto* param : parameters)    // have to do the loop again as a fix... still looking for a cleaner solution 
+        for (auto* param : parameters)    
             if (param->isAutomatable())
                 allComponents.add(new ParameterDisplayComponent(processor, *param, paramWidth));
 
@@ -1001,6 +1001,16 @@ public:
         p->setBounds(area.removeFromBottom(p->getHeight()));
     }
 
+    void addPanel(std::unique_ptr<ParametersPanel> p)  //overload
+    {
+        allComponents.add(p.get());
+        addAndMakeVisible(p.get());
+        setSize(maxWidth, getHeight() + p->getHeight());
+        auto area = getLocalBounds();
+        p->setBounds(area.removeFromBottom(p->getHeight()));
+    }
+
+
 public:
     int height;
     int maxWidth;
@@ -1016,12 +1026,12 @@ private:
 //===============================================================================================================
 class VisualOrbit : public juce::Component,
     private juce::AudioProcessorParameter::Listener
-{ //does this need to inheret from timer to stay accurate... ?
+{ 
 public:
-    VisualOrbit(juce::AudioProcessorValueTreeState& t, juce::AudioProcessorParameter* stepParam, juce::AudioProcessorParameter* pulseParam, juce::Colour c)
-        : tree(t), stepParameter(*stepParam), pulseParameter(*pulseParam), color(c)
+    VisualOrbit(juce::AudioProcessorValueTreeState& t, juce::AudioProcessorParameter* stepParam, juce::AudioProcessorParameter* pulseParam,int i, juce::Colour c)
+        : tree(t), stepParameter(*stepParam), pulseParameter(*pulseParam), index(i), color(c)
     {      
-        setSize(100,100);
+        //setSize(100,100);
         stepParameter.addListener(this);
         pulseParameter.addListener(this);
         
@@ -1047,14 +1057,14 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+        //g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 
         auto dotPos = 0.0f;
         auto outline = findColour(Slider::rotarySliderOutlineColourId);
         auto fill = findColour(juce::Slider::rotarySliderFillColourId);
 
         auto bounds = getLocalBounds();
-        auto radius = jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
+        auto radius = jmin(bounds.getWidth()-8, bounds.getHeight()-8) / 2.0f;
         //auto toAngle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
         auto toAngle = 0.0f + dotPos * (2*MathConstants<float>::pi - 0.0f);
         auto lineW = jmin(8.0f, radius * 0.5f);
@@ -1083,13 +1093,14 @@ public:
             g.fillEllipse(Rectangle<float>(dotW, dotW).withCentre(thumbPoint));
         }
 
-        auto thumbWidth = lineW * 2.0f;
+        auto thumbWidth = lineW * 1.5f;
+        toAngle = (2 * MathConstants<float>::pi / numSteps) * currentStep;
         Point<float> thumbPoint(bounds.getCentreX() + arcRadius * std::cos(toAngle - MathConstants<float>::halfPi),
             bounds.getCentreY() + arcRadius * std::sin(toAngle - MathConstants<float>::halfPi));
 
         
         g.setColour( (pulseParameter.getValue())? 
-            findColour(Slider::thumbColourId) : juce::Colours::grey);
+            color : juce::Colours::darkgrey);
         g.fillEllipse(Rectangle<float>(thumbWidth, thumbWidth).withCentre(thumbPoint));
 
     }
@@ -1100,27 +1111,20 @@ public:
         auto area = getLocalBounds();
     }
 
-    void addPanel(ParametersPanel* p)
-    {
-     
-        addAndMakeVisible(p);
-        setSize(width, getHeight() + p->getHeight());
-        auto area = getLocalBounds();
-        p->setBounds(area.removeFromBottom(p->getHeight()));
-    }
+   
     void parameterValueChanged(int i, float f ) override 
     {
-        MessageManagerLock mml(Thread::getCurrentThread());
+       /* MessageManagerLock mml(Thread::getCurrentThread());
         if (i == stepIndex)
         {
             stepParameter.setValue(f);
             numSteps = stepParameter.getValue();
-        } 
+        } */
     }
 
-    void setValue() 
+    void move(int i) 
     {
-        repaint();
+        currentStep = i;
     }
 
     void parameterGestureChanged(int i, bool b) override 
@@ -1131,13 +1135,13 @@ public:
 public:
     int height;
     int width;
-    juce::Colour color;
+    int index;
     bool pulseActive;
-    int numSteps;
+    int numSteps, currentStep;
+    juce::Colour color;
 
 private:
     int stepIndex, pulseIndex;
-    //juce::AudioProcessor& processor;
     juce::AudioProcessorValueTreeState& tree;
     juce::AudioProcessorParameter& stepParameter;
     juce::AudioProcessorParameter& pulseParameter;
@@ -1145,15 +1149,101 @@ private:
 };
 //==============================================================================>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 class OrbitPanel :public juce::Component,
-    private juce::AudioProcessorListener
+    private juce::AudioProcessorParameter::Listener
 {
-    OrbitPanel()
-    {}
-    ~OrbitPanel()
-    {}
 public:
-    std::vector<VisualOrbit> orbits;
-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OrbitPanel)
+    OrbitPanel(NewProjectAudioProcessor& proc, juce::AudioProcessorParameter* forceStepParam)
+        :processor(proc), step(*forceStepParam)
+    {
+        setSize(200, 200);
+        step.addListener(this);
+
+        addOrbit( std::make_unique<VisualOrbit>(processor.treeState, processor.treeState.getParameter("StepCount1"), processor.treeState.getParameter("PulseActive1"), 0, juce::Colours::white));
+        addOrbit( std::make_unique<VisualOrbit>(processor.treeState, processor.treeState.getParameter("StepCount2"), processor.treeState.getParameter("PulseActive2"), 1, juce::Colours::limegreen));
+        addOrbit( std::make_unique<VisualOrbit>(processor.treeState, processor.treeState.getParameter("StepCount3"), processor.treeState.getParameter("PulseActive3"), 2, juce::Colours::orange));
+        addOrbit( std::make_unique<VisualOrbit>(processor.treeState, processor.treeState.getParameter("StepCount4"), processor.treeState.getParameter("PulseActive4"), 3, juce::Colours::magenta));
+        addOrbit( std::make_unique<VisualOrbit>(processor.treeState, processor.treeState.getParameter("StepCount5"), processor.treeState.getParameter("PulseActive5"), 4, juce::Colours::cyan));
+      
+
+    }
+    ~OrbitPanel()
+    {
+        orbits.clear();
+        removeAllChildren();
+       
+    }
+    void paint(juce::Graphics& g) override
+    {
+        Rectangle<float> area(getX(), getY(), getWidth(), getHeight());
+        area = area.reduced(10);
+        g.setColour(juce::Colours::grey);
+        g.fillRoundedRectangle(area, 15.0f);
+    }
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(10);
+       
+        if (orbits.size())
+        {
+            int spacing;
+            switch (orbits.size())
+            {
+                case 2: spacing = 50; break;
+                case 3: spacing = 25; break;
+                case 4: spacing = 18; break;
+                case 5: spacing = 15; break;
+                default: spacing = 0; break;
+            }
+
+            for (int x = 0; x < orbits.size(); x++)
+            {   orbits[x]->setBounds(area.reduced( 55 - (spacing*x)) );    }
+         
+          
+        }
+    }
+
+    void addOrbit(std::unique_ptr<VisualOrbit> vo)
+    {
+        //addChildAndSetID(o,"orbit");
+        VisualOrbit& o = *vo;
+        addAndMakeVisible(o);
+
+        orbits.push_back(std::move(vo));
+    } 
+
+    void insertOrbit(std::unique_ptr<VisualOrbit> vo)
+    {
+        VisualOrbit& o = *vo;
+        //orbits.insert(orbits.begin() + o.index, vo);
+    }
+
+    void removeOrbit(int i)
+    {
+      
+        orbits.erase(orbits.begin()+i);
+    }
+
+    void parameterValueChanged(int i, float f) override
+    {
+        MessageManagerLock mml(Thread::getCurrentThread());
+        {  
+            for (int x = 0; x < orbits.size(); x++)
+            {
+                orbits[x]->move(processor.currentStep[x]);
+                repaint();
+            }
+        }
+    }
+
+    void parameterGestureChanged(int i, bool b)
+    {
+    }
+public:
+    std::vector<std::unique_ptr<VisualOrbit>> orbits;
+    juce::AudioProcessorParameter& step;
+    NewProjectAudioProcessor& processor;
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OrbitPanel)
 
 };
 //==================================================================================================================
@@ -1167,18 +1257,41 @@ struct AarrowAudioProcessorEditor::Pimpl
 
         owner.setOpaque(true);
 
-
-        //paramComponents.add(new ParameterDisplayComponent(processor, *param))
-
-
-        //params.add(owner.audioProcessor.range);
+        params.add(owner.audioProcessor.treeState.getParameter("Speed"));
 
 
 
-        //ParametersPanel* myPanel = new ParametersPanel(owner.audioProcessor, params, false);
-        orbit1 = new VisualOrbit(owner.audioProcessor.treeState,owner.audioProcessor.treeState.getParameter("StepCount1"), owner.audioProcessor.treeState.getParameter("PulseActive1"), juce::Colours::slategrey);
+        myPanel = std::make_unique<ParametersPanel>(owner.audioProcessor, params, false);
+        dynamic_cast<SliderParameterComponent*> (myPanel->findChildWithID("SPEEDComp")->findChildWithID("ActualComponent")) ->changeSliderStyle(3);
+        params.clear();
+        
+        auto controllerPanel = std::make_unique<ParametersPanel>(owner.audioProcessor, params, false);
+       /* params.add(std::make_unique<juce::AudioParameterBool>(juce::String("OnButton" + std::to_string(i)), ju
+        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("Reversed" + std::to_string(i)), ju
 
-        ////myPanel->setSize(400, 100);
+        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("PulseActive" + std::to_string(i)),
+
+
+        params.add(std::make_unique<juce::AudioParameterInt>(juce::String("StepCount" + std::to_string(i)), ju
+        params.add(std::make_unique<juce::AudioParameterInt>(juce::String("PulseCount" + std::to_string(i)), ju
+
+        params.add(std::make_unique<juce::AudioParameterChoice>(juce::String("OutputNote" + std::to_string(i))
+
+        params.add(std::make_unique<juce::AudioParameterInt>(juce::String("Octave" + std::to_string(i)), juce:*/
+
+        params.add(owner.audioProcessor.treeState.getParameter("OnButton1"));
+        params.add(owner.audioProcessor.treeState.getParameter("Reversed1"));
+        params.add(owner.audioProcessor.treeState.getParameter("StepCount1"));
+        params.add(owner.audioProcessor.treeState.getParameter("PulseCount1"));
+        //params.add(owner.audioProcessor.treeState.getParameter("OutputNote1"));
+        params.add(owner.audioProcessor.treeState.getParameter("Octave1"));
+
+        auto orbitOne = std::make_unique<ParametersPanel>(owner.audioProcessor, params, true);
+        clock = std::make_unique<OrbitPanel>(owner.audioProcessor, owner.audioProcessor.treeState.getParameter("ForceStep"));
+
+       
+ 
+        //myPanel->setSize(400, 100);
         //dynamic_cast<ParameterDisplayComponent*> (myPanel->findChildWithID("-RANGEComp"))->displayParameterName(juce::Justification::centredRight);
         //auto RangeSlider = dynamic_cast<SliderParameterComponent*>(myPanel->findChildWithID("-RANGEComp")->findChildWithID("ActualComponent"));
         //RangeSlider->setSize(RangeSlider->getWidth() + 50, RangeSlider->getHeight());
@@ -1186,16 +1299,22 @@ struct AarrowAudioProcessorEditor::Pimpl
         //RangeSlider->changeSliderStyle(3);
 
         // -------------------------------------------------------------------------------
-
+        //controllerPanel->addPanel(std::move(orbitOne));
 
         // ---------------------------------------------------------------------------------------------
-      /*  fullPanel = new juce::Component();
-        fullPanel->setSize(500, myPanel->getHeight());
-        fullPanel->addAndMakeVisible(myPanel);
-        fullPanel->addAndMakeVisible(Panel4);
-        Panel4->setBounds(fullPanel->getLocalBounds().removeFromRight(100));*/
+        fullPanel = new Component();
+        fullPanel->setSize(600, 250);
+        fullPanel->addAndMakeVisible(*myPanel);
+        fullPanel->addAndMakeVisible(*clock);
 
+        clock->setBounds(fullPanel->getLocalBounds()
+            .removeFromRight(210)
+            .translated(0,-20));
 
+        myPanel->setBounds(fullPanel->getLocalBounds()
+            .removeFromRight(210)
+            .removeFromBottom(30)
+            .translated(-50,-10));
 
      
 
@@ -1207,9 +1326,9 @@ struct AarrowAudioProcessorEditor::Pimpl
             //SyncComp->getParameterComp<BooleanButtonParameterComponent>()->setLink(*SpeedComp->findChildWithID("ActualComponent"));
 
         params.clear();
-        //view.setViewedComponent(fullPanel);
-        //view.setViewedComponent(myPanel);
-        view.setViewedComponent(orbit1);
+        view.setViewedComponent(fullPanel);
+        //view.setViewedComponent(clock);
+
         owner.addAndMakeVisible(view);
         //owner.addAndMakeVisible(tooltipWindow);
 
@@ -1218,7 +1337,6 @@ struct AarrowAudioProcessorEditor::Pimpl
 
     ~Pimpl()
     {
-        //fullPanel->removeAllChildren();
         view.setViewedComponent(nullptr, false);
     }
 
@@ -1231,13 +1349,18 @@ struct AarrowAudioProcessorEditor::Pimpl
 
     //==============================================================================
     AarrowAudioProcessorEditor& owner;
-    juce::Component* fullPanel;
+    Component* fullPanel;
     juce::Array<juce::AudioProcessorParameter*> params;
-    juce::Viewport view;
+    
+    
 private:
     juce::TooltipWindow tooltipWindow;
-    VisualOrbit* orbit1;
-
+    std::vector<std::unique_ptr<ParametersPanel>> orbitControllers;
+    std::unique_ptr<OrbitPanel> clock;
+    std::unique_ptr<ParametersPanel> myPanel;
+public:
+    juce::Viewport view;
+    
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pimpl)
 };
 //==============================================================================

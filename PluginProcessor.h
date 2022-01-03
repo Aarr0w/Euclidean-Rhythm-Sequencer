@@ -21,6 +21,7 @@ public:
     ~NewProjectAudioProcessor() override;
 
     juce::AudioProcessorValueTreeState treeState;
+    std::vector<int> currentStep;
     
     //==============================================================================
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -94,7 +95,6 @@ private:
     int pulses;
     bool cycleChanged;
     std::vector <std::vector<bool>> orbits;
-    std::vector<int> currentStep;
     std::vector<int> cycleSteps;
     juce::SortedSet<int> notes; //might need to be vector if noteOffs aren't catching multiples
 

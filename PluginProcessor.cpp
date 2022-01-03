@@ -48,11 +48,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout NewProjectAudioProcessor::cr
     juce::AudioProcessorValueTreeState::ParameterLayout params;
     //std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    params.add(std::make_unique<juce::AudioParameterFloat>("Speed", "SPEED", 0.01f,1.0f,0.7f));
+    params.add(std::make_unique<juce::AudioParameterFloat>("Speed", "SPEED", 0.01f,1.0f,0.4f));
 
     params.add(std::make_unique<juce::AudioParameterBool>("Sync", "SYNC", false));
-    params.add(std::make_unique<juce::AudioParameterBool>("Dot", "DOT", false));
+    params.add(std::make_unique<juce::AudioParameterBool>("Dot", "DOT", true));
     params.add(std::make_unique<juce::AudioParameterBool>("Trip", "TRIP", false));
+
     params.add(std::make_unique<juce::AudioParameterBool>("ForceStep", "STEP", false));
 
     for (int i = 1; i < 6; i++)
@@ -228,8 +229,11 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (*trip)
         noteDuration = (noteDuration * 2.0f) / 3.0f;
 
+    //noteDuration *= 10;
+
     if (ntDrtn != noteDuration)
         ntDrtn = noteDuration;
+
 
     //I only want to do this loop if a value has changed....
     if (cycleChanged)
@@ -320,8 +324,7 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                 (currentStep[i]+1) % steps 
                 : steps - ( (steps-currentStep[i]) % steps ) - 1;
 
-            //add note for each orbit with currentStep that returns 'true'
-            
+            //add note for each orbit with currentStep that returns 'true'   
             for (auto o : orbits)
             {
                 auto checkOrbits = std::string(o.begin(), o.end());
@@ -343,6 +346,9 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             }
 
         }
+
+        treeState.getParameter("ForceStep")->setValueNotifyingHost(!treeState.getRawParameterValue("ForceStep"));// should ping OrbitComponent to repaint
+
 
     }
 
