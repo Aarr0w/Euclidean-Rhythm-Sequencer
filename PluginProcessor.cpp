@@ -23,18 +23,7 @@ NewProjectAudioProcessor::NewProjectAudioProcessor()
 treeState(*this,nullptr,"PARAMETER_TREE",createParameterLayout())
 #endif 
 {
-
-
- /*   addParameter(speed = new juce::AudioParameterFloat("speed", "-Speed", 0.0, 1.0, 0.5));
-    addParameter(prob = new juce::AudioParameterInt("prob", "-RestProbability", 0, 99, 1));
-
-    addParameter(sync = new juce::AudioParameterBool("sync", "bBPM Link", false));
-    addParameter(turn = new juce::AudioParameterBool("return", "-Return", false));
-
-    addParameter(octaves = new juce::AudioParameterInt("octaves", "iOctaveCount", 1, 5, 2));
-    addParameter(direction = new juce::AudioParameterChoice("direction", "-Direction", { "Up","Down","Random" }, 0));*/
-
-
+ 
 }
 
 NewProjectAudioProcessor::~NewProjectAudioProcessor()
@@ -46,7 +35,6 @@ NewProjectAudioProcessor::~NewProjectAudioProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout NewProjectAudioProcessor::createParameterLayout() // do i need to add 'fully-qualified-class? tutorial 44
 {
     juce::AudioProcessorValueTreeState::ParameterLayout params;
-    //std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     params.add(std::make_unique<juce::AudioParameterFloat>("Speed", "SPEED", 0.01f,1.0f,0.4f));
 
@@ -60,18 +48,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout NewProjectAudioProcessor::cr
     {
         auto a = juce::String("OnButton"+ std::to_string(i));
      
-        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("OnButton" + std::to_string(i)), juce::String("ON" + std::to_string(i)) ,false));
+        params.add(std::make_unique<juce::AudioParameterBool>(juce::String("bOnButton" + std::to_string(i)), juce::String("ON" + std::to_string(i)) ,false));
         params.add(std::make_unique<juce::AudioParameterBool>(juce::String("Reversed" + std::to_string(i)), juce::String("REVERSED" + std::to_string(i)), false));
 
         params.add(std::make_unique<juce::AudioParameterBool>(juce::String("PulseActive" + std::to_string(i)), juce::String("PULSEON" + std::to_string(i)), true));
         
-
+        // THESE TWO **MUST** BE IN THIS ORDER WITHOUT INTERRUPTION (PluginEditor.cpp :: OrbitPanel :: addOrbit)
         params.add(std::make_unique<juce::AudioParameterInt>(juce::String("StepCount" + std::to_string(i)), juce::String("STEPS" + std::to_string(i)), 1, 32, 8));
         params.add(std::make_unique<juce::AudioParameterInt>(juce::String("PulseCount" + std::to_string(i)),juce::String( "PULSES" + std::to_string(i)), 0, 32, 3));
 
         params.add(std::make_unique<juce::AudioParameterChoice>(juce::String("OutputNote" + std::to_string(i)), juce::String("NOTE" + std::to_string(i)), juce::Array<juce::String>{ "C4", "C#4", "D4", "D#4", "E4", "F4", "F#4", "G4", "G#4", "A4", "A#4", "B4" },0));
         
-        params.add(std::make_unique<juce::AudioParameterInt>(juce::String("Octave" + std::to_string(i)), juce::String("OCTAVE" + std::to_string(i)), -3, 3, 0));
+        params.add(std::make_unique<juce::AudioParameterInt>(juce::String("iOctave" + std::to_string(i)), juce::String("OCTAVE" + std::to_string(i)), -3, 3, 0));
     }
         //params.push_back( std::make_unique<AudioParameterInt>(String(i), String(i), 0, i, 0) );
        
@@ -206,7 +194,7 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     juce::MidiBuffer processedMidi;
 
-    //juce::MidiMessage m;
+    //bool done = false;
 
     if (getPlayHead() != nullptr)
         getPlayHead()->getCurrentPosition(playHeadInfo);
@@ -234,13 +222,15 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (ntDrtn != noteDuration)
         ntDrtn = noteDuration;
 
-
+    done = true;
     //I only want to do this loop if a value has changed....
     if (cycleChanged)
     {
+        //done = false;
+        cycleChanged = false;
         orbits.clear();
         orbits.assign(5, { false });
-        cycleChanged = false;
+        
         for (int i = 0; i < 5; i++)
         {
 
@@ -267,18 +257,20 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
                 //evenly spaces the remainder across the orbit 
                 auto m = steps % pulses;
-                auto skip = (int)(juce::roundToIntAccurate(pulses / m));
-
-                for (int x = 0; x < pulses; x += (int)(juce::roundToIntAccurate(pulses / m)))
+                if (m)
                 {
-                    cycleSteps[x] = cycleSteps[x] + 1;
+                    auto skip = (int)(juce::roundToIntAccurate(pulses / m));
 
-                    if (m - (x + 1) == 0) // break loop when we've added 'remainder' number of steps between pulses
+                    for (int x = 0; x < pulses; x += (int)(juce::roundToIntAccurate(pulses / m)))
                     {
-                        x = pulses;
+                        cycleSteps[x] = cycleSteps[x] + 1;
+
+                        if (m - (x + 1) == 0) // break loop when we've added 'remainder' number of steps between pulses
+                        {
+                            x = pulses;
+                        }
                     }
                 }
-
 
                 auto checkCycleSteps = std::string(cycleSteps.begin(), cycleSteps.end());
 
@@ -300,6 +292,7 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
             cycleSteps.clear();
         }
+        //done = true;
     }
     
 
@@ -307,7 +300,7 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // .........................................................................................................................
 
 
-    if ((time + numSamples) >= noteDuration)                                                      
+    if ((time + numSamples) >= noteDuration && done)                                                      
     {  
         auto offset = juce::jmax(0, juce::jmin((int)(noteDuration - time), numSamples - 1));
 
@@ -334,22 +327,21 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             if ( orbits[i][currentStep[i]] )
             {
                 treeState.getParameter("PulseActive" + std::to_string(i + 1))->setValueNotifyingHost(1.0f);
-
-                auto note = noteToInt((juce::String)(*treeState.getRawParameterValue("OutputNote" + std::to_string(i + 1))));
-                note = note + ( 12 * (int)(*treeState.getRawParameterValue("Octave" + std::to_string(i + 1))) );
+                
+               
+                auto note = noteToInt(treeState.getParameter("OutputNote" + std::to_string(i + 1))->getCurrentValueAsText());
+                note = note + ( 12 * (int)(*treeState.getRawParameterValue("iOctave" + std::to_string(i + 1))) );
                 processedMidi.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)84), offset);
                 notes.add(note);
             }
             else
             {
                 treeState.getParameter("PulseActive" + std::to_string(i + 1))->setValueNotifyingHost(0.0f);
-            }
+            } 
 
         }
 
         treeState.getParameter("ForceStep")->setValueNotifyingHost(!treeState.getRawParameterValue("ForceStep"));// should ping OrbitComponent to repaint
-
-
     }
 
     time = (time + numSamples) % noteDuration;                                                      

@@ -20,8 +20,11 @@ public:
     NewProjectAudioProcessor();
     ~NewProjectAudioProcessor() override;
 
+
     juce::AudioProcessorValueTreeState treeState;
     std::vector<int> currentStep;
+    bool cycleChanged;
+
     
     //==============================================================================
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -39,13 +42,14 @@ public:
         switch (c)
         {
            
-            case 'C': noteValue = 60;
-            case 'D': noteValue = 62;
-            case 'E': noteValue = 64;
-            case 'F': noteValue = 65;
-            case 'G': noteValue = 67;
-            case 'A': noteValue = 69;
-            case 'B': noteValue = 71;
+            case 'C': noteValue = 60; break;
+            case 'D': noteValue = 62; break;
+            case 'E': noteValue = 64; break;
+            case 'F': noteValue = 65; break;
+            case 'G': noteValue = 67; break;
+            case 'A': noteValue = 69; break;
+            case 'B': noteValue = 71; break;
+            default: noteValue = 100; break;
         }
 
         if(s.contains("#"))
@@ -93,7 +97,7 @@ private:
     float syncSpeed;
     int steps;
     int pulses;
-    bool cycleChanged;
+    bool done = false;
     std::vector <std::vector<bool>> orbits;
     std::vector<int> cycleSteps;
     juce::SortedSet<int> notes; //might need to be vector if noteOffs aren't catching multiples
